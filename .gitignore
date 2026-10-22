@@ -1,0 +1,11 @@
+# Credentials and downloaded taxpayer data
+.env
+.env.*
+!.env.example
+/data/
+/bin/
+*.ksef-token
+
+# Go build/test output
+*.test
+coverage.out
