@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -222,7 +223,7 @@ func (c *Client) Authenticate(ctx context.Context, plain string) error {
 	var pub *rsa.PublicKey
 	for i := range certs {
 		candidate := &certs[i]
-		if !contains(candidate.Usage, "KsefTokenEncryption") || now.Before(candidate.ValidFrom) || !now.Before(candidate.ValidTo) {
+		if !slices.Contains(candidate.Usage, "KsefTokenEncryption") || now.Before(candidate.ValidFrom) || !now.Before(candidate.ValidTo) {
 			continue
 		}
 		der, err := base64.StdEncoding.DecodeString(candidate.Certificate)
@@ -299,14 +300,6 @@ func (c *Client) Authenticate(ctx context.Context, plain string) error {
 	c.accessExpiry = ts.AccessToken.ValidUntil
 	c.refreshExpiry = ts.RefreshToken.ValidUntil
 	return nil
-}
-func contains(a []string, s string) bool {
-	for _, v := range a {
-		if v == s {
-			return true
-		}
-	}
-	return false
 }
 func (c *Client) refreshTokens(ctx context.Context) error {
 	if c.refresh == "" || (!c.refreshExpiry.IsZero() && !c.refreshExpiry.After(time.Now())) {
