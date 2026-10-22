@@ -38,9 +38,9 @@ func TestAuthenticateEncryptsTimestampAndRedeems(t *testing.T) {
 		}
 		switch i {
 		case 0:
-			json.NewEncoder(w).Encode(map[string]any{"challenge": "challenge-1", "timestampMs": stamp})
+			_ = json.NewEncoder(w).Encode(map[string]any{"challenge": "challenge-1", "timestampMs": stamp})
 		case 1:
-			json.NewEncoder(w).Encode([]any{map[string]any{"certificate": base64.StdEncoding.EncodeToString(der), "publicKeyId": "key-id", "validFrom": now.Add(-time.Hour), "validTo": now.Add(time.Hour), "usage": []string{"KsefTokenEncryption"}}})
+			_ = json.NewEncoder(w).Encode([]any{map[string]any{"certificate": base64.StdEncoding.EncodeToString(der), "publicKeyId": "key-id", "validFrom": now.Add(-time.Hour), "validTo": now.Add(time.Hour), "usage": []string{"KsefTokenEncryption"}}})
 		case 2:
 			var req struct {
 				Challenge   string            `json:"challenge"`
@@ -57,17 +57,17 @@ func TestAuthenticateEncryptsTimestampAndRedeems(t *testing.T) {
 				t.Errorf("invalid encrypted auth request: %q %v %#v", plain, e, req)
 			}
 			w.WriteHeader(202)
-			json.NewEncoder(w).Encode(map[string]any{"referenceNumber": "ref-1", "authenticationToken": map[string]any{"token": "auth-token", "validUntil": now.Add(time.Hour)}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"referenceNumber": "ref-1", "authenticationToken": map[string]any{"token": "auth-token", "validUntil": now.Add(time.Hour)}})
 		case 3:
 			if r.Header.Get("Authorization") != "Bearer auth-token" {
 				t.Error("operation token not supplied")
 			}
-			json.NewEncoder(w).Encode(map[string]any{"status": map[string]any{"code": 200, "description": "ok"}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": map[string]any{"code": 200, "description": "ok"}})
 		case 4:
 			if r.Header.Get("Authorization") != "Bearer auth-token" {
 				t.Error("redeem token not supplied")
 			}
-			json.NewEncoder(w).Encode(map[string]any{"accessToken": map[string]any{"token": "access", "validUntil": now.Add(time.Hour)}, "refreshToken": map[string]any{"token": "refresh", "validUntil": now.Add(time.Hour)}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"accessToken": map[string]any{"token": "access", "validUntil": now.Add(time.Hour)}, "refreshToken": map[string]any{"token": "refresh", "validUntil": now.Add(time.Hour)}})
 		}
 		i++
 	}))
@@ -98,7 +98,7 @@ func TestQueryContractAndNoRedirect(t *testing.T) {
 		if body["subjectType"] != "Subject2" {
 			t.Errorf("subject %v", body["subjectType"])
 		}
-		json.NewEncoder(w).Encode(map[string]any{"hasMore": false, "isTruncated": false, "permanentStorageHwmDate": "2025-01-01T00:00:00Z", "invoices": []any{}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"hasMore": false, "isTruncated": false, "permanentStorageHwmDate": "2025-01-01T00:00:00Z", "invoices": []any{}})
 	}))
 	defer s.Close()
 	c := New(s.URL, "5260250995")
@@ -110,7 +110,9 @@ func TestQueryContractAndNoRedirect(t *testing.T) {
 	if !called {
 		t.Fatal("request not made")
 	}
-	r := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "http://127.0.0.1:1/steal", 302) }))
+	r := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://127.0.0.1:1/steal", http.StatusFound)
+	}))
 	defer r.Close()
 	c = New(r.URL, "5260250995")
 	if _, _, e = c.request(context.Background(), "GET", "/x", nil, "secret", 0); e == nil || !strings.Contains(e.Error(), "HTTP 302") {

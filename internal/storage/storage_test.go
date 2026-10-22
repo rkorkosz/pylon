@@ -25,7 +25,11 @@ func testStore(t *testing.T) *Store {
 	if e != nil {
 		t.Fatal(e)
 	}
-	t.Cleanup(func() { s.Close() })
+	t.Cleanup(func() {
+		if err := s.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 	return s
 }
 func TestSaveXMLIdempotentAndConflict(t *testing.T) {
@@ -106,7 +110,11 @@ func TestDirectoryPermissionFailure(t *testing.T) {
 	if e := os.Chmod(path, 0500); e != nil {
 		t.Fatal(e)
 	}
-	defer os.Chmod(path, 0700)
+	defer func() {
+		if err := os.Chmod(path, 0700); err != nil {
+			t.Error(err)
+		}
+	}()
 	if _, e := s.SaveXML(number(1), []byte(`<Invoice/>`), metadata()); e == nil {
 		t.Fatal("permission failure ignored")
 	}
@@ -189,7 +197,9 @@ func TestSubjectProvenanceAndLegacySidecar(t *testing.T) {
 	path := filepath.Join(s.dir, "invoices", n+".json")
 	raw, _ := os.ReadFile(path)
 	var old Metadata
-	json.Unmarshal(raw, &old)
+	if err := json.Unmarshal(raw, &old); err != nil {
+		t.Fatal(err)
+	}
 	old.Subjects = nil
 	raw, _ = json.Marshal(old)
 	if e := os.WriteFile(path, raw, 0600); e != nil {
@@ -202,7 +212,9 @@ func TestSubjectProvenanceAndLegacySidecar(t *testing.T) {
 	}
 	raw, _ = os.ReadFile(path)
 	var got Metadata
-	json.Unmarshal(raw, &got)
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
 	if !reflect.DeepEqual(got.Subjects, []string{"issued", "received"}) || got.Subject != "received" || !got.DownloadedAt.Equal(old.DownloadedAt) {
 		t.Fatalf("metadata %#v", got)
 	}
@@ -236,12 +248,18 @@ func TestRejectArtifactSymlinksAndPermissions(t *testing.T) {
 			}
 			if artifact == "lock" {
 				path = filepath.Join(s.dir, ".lock")
-				s.Close()
+				if err := s.Close(); err != nil {
+					t.Fatal(err)
+				}
 				if e = os.Remove(path); e != nil {
 					t.Fatal(e)
 				}
 			} else {
-				defer s.Close()
+				defer func() {
+					if err := s.Close(); err != nil {
+						t.Error(err)
+					}
+				}()
 			}
 			if e = os.Symlink(external, path); e != nil {
 				t.Fatal(e)
@@ -249,7 +267,9 @@ func TestRejectArtifactSymlinksAndPermissions(t *testing.T) {
 			switch artifact {
 			case "lock":
 				if other, e := Open(root, "test", "5260250995"); e == nil {
-					other.Close()
+					if err := other.Close(); err != nil {
+						t.Error(err)
+					}
 					t.Fatal("lock symlink accepted")
 				}
 			case "checkpoint":
@@ -309,7 +329,9 @@ func TestRejectDirectorySymlinks(t *testing.T) {
 				t.Fatal(e)
 			}
 			if s, e := Open(root, "test", "5260250995"); e == nil {
-				s.Close()
+				if err := s.Close(); err != nil {
+					t.Error(err)
+				}
 				t.Fatal("directory symlink accepted")
 			}
 			fi, _ := os.Stat(external)
@@ -329,7 +351,9 @@ func TestCheckpointNamespacesAndLock(t *testing.T) {
 		t.Fatal(e)
 	}
 	if other, e := Open(root, "test", "5260250995"); e == nil {
-		other.Close()
+		if err := other.Close(); err != nil {
+			t.Error(err)
+		}
 		t.Fatal("second writer acquired lock")
 	}
 	cp := checkpoint()
@@ -354,7 +378,11 @@ func TestCheckpointNamespacesAndLock(t *testing.T) {
 	if e != nil {
 		t.Fatal("lock not released", e)
 	}
-	defer s.Close()
+	defer func() {
+		if err := s.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
 }
 func TestCancellationAndFailedCommit(t *testing.T) {
 	s := testStore(t)

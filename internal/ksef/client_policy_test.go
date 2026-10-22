@@ -44,7 +44,7 @@ func TestBoundedRetriesAndRedaction(t *testing.T) {
 				calls.Add(1)
 				w.Header().Set("Retry-After", "120")
 				w.WriteHeader(status)
-				w.Write([]byte(`{"code":"secret-token","detail":"private taxpayer XML"}`))
+				_, _ = w.Write([]byte(`{"code":"secret-token","detail":"private taxpayer XML"}`))
 			}))
 			defer server.Close()
 			c := New(server.URL, "5260250995")
@@ -81,7 +81,7 @@ func TestTransientRecoveryAndCancellation(t *testing.T) {
 			w.WriteHeader(503)
 			return
 		}
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	}))
 	defer server.Close()
 	c := New(server.URL, "5260250995")
@@ -121,7 +121,7 @@ func TestRefreshLifecycleAndControlledReplay(t *testing.T) {
 						w.WriteHeader(403)
 						return
 					}
-					json.NewEncoder(w).Encode(map[string]any{"accessToken": map[string]any{"token": "new-access", "validUntil": time.Now().Add(time.Hour)}})
+					_ = json.NewEncoder(w).Encode(map[string]any{"accessToken": map[string]any{"token": "new-access", "validUntil": time.Now().Add(time.Hour)}})
 					return
 				}
 				count := requests.Add(1)
@@ -136,7 +136,7 @@ func TestRefreshLifecycleAndControlledReplay(t *testing.T) {
 				if r.Header.Get("Authorization") != "Bearer new-access" {
 					t.Error("wrong access token placement")
 				}
-				w.Write([]byte("ok"))
+				_, _ = w.Write([]byte("ok"))
 			}))
 			defer server.Close()
 			c := New(server.URL, "5260250995")
@@ -213,9 +213,9 @@ func TestAuthenticationFailureMatrix(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
 				case "/auth/challenge":
-					json.NewEncoder(w).Encode(challenge{Challenge: "fixture", TimestampMs: 1740000000123})
+					_ = json.NewEncoder(w).Encode(challenge{Challenge: "fixture", TimestampMs: 1740000000123})
 				case "/security/public-key-certificates":
-					json.NewEncoder(w).Encode(certs)
+					_ = json.NewEncoder(w).Encode(certs)
 				case "/auth/ksef-token":
 					starts.Add(1)
 					if scenario == "start failure" {
@@ -223,11 +223,14 @@ func TestAuthenticationFailureMatrix(t *testing.T) {
 						return
 					}
 					var payload map[string]any
-					json.NewDecoder(r.Body).Decode(&payload)
+					if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+						t.Error(err)
+						return
+					}
 					if payload["publicKeyId"] != "valid" {
 						t.Error("wrong encryption key selected")
 					}
-					json.NewEncoder(w).Encode(map[string]any{"referenceNumber": "ref", "authenticationToken": map[string]string{"token": "auth"}})
+					_ = json.NewEncoder(w).Encode(map[string]any{"referenceNumber": "ref", "authenticationToken": map[string]string{"token": "auth"}})
 				case "/auth/ref":
 					count := polls.Add(1)
 					code := 200
@@ -237,14 +240,14 @@ func TestAuthenticationFailureMatrix(t *testing.T) {
 					if scenario == "cancel polling" || (scenario == "pending success" && count == 1) {
 						code = 100
 					}
-					json.NewEncoder(w).Encode(map[string]any{"status": map[string]int{"code": code}})
+					_ = json.NewEncoder(w).Encode(map[string]any{"status": map[string]int{"code": code}})
 				case "/auth/token/redeem":
 					redeems.Add(1)
 					if scenario == "redeem failure" {
 						w.WriteHeader(500)
 						return
 					}
-					json.NewEncoder(w).Encode(map[string]any{"accessToken": map[string]any{"token": "access", "validUntil": now.Add(time.Hour)}, "refreshToken": map[string]any{"token": "refresh", "validUntil": now.Add(2 * time.Hour)}})
+					_ = json.NewEncoder(w).Encode(map[string]any{"accessToken": map[string]any{"token": "access", "validUntil": now.Add(time.Hour)}, "refreshToken": map[string]any{"token": "refresh", "validUntil": now.Add(2 * time.Hour)}})
 				default:
 					t.Error("unexpected route", r.URL.Path)
 					http.NotFound(w, r)

@@ -27,7 +27,9 @@ func TestPreflightDoesNotConstructClient(t *testing.T) {
 			if e != nil {
 				t.Fatal(e)
 			}
-			s.Close()
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
 			path := filepath.Join(root, "test", "5260250995", "checkpoints", "received.json")
 			switch mode {
 			case "wrong checkpoint":

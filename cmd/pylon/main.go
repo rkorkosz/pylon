@@ -30,14 +30,14 @@ func run(args []string) error {
 }
 
 // The client factory is a test seam, not a configurable credential destination.
-func runCLI(ctx context.Context, args []string, out io.Writer, newClient func(config.Config) *ksef.Client) error {
+func runCLI(ctx context.Context, args []string, out io.Writer, newClient func(config.Config) *ksef.Client) (result error) {
 	o, err := config.ParseArgs(args)
 	if err != nil {
 		return err
 	}
 	if o.Help {
-		fmt.Fprint(out, config.HelpText)
-		return nil
+		_, err := fmt.Fprint(out, config.HelpText)
+		return err
 	}
 	c, err := config.Validate(o, nil)
 	if err != nil {
@@ -51,7 +51,7 @@ func runCLI(ctx context.Context, args []string, out io.Writer, newClient func(co
 	if err != nil {
 		return err
 	}
-	defer store.Close()
+	defer func() { result = errors.Join(result, store.Close()) }()
 	for _, s := range subjects {
 		_, ok, e := store.Checkpoint(s)
 		if e != nil {
@@ -71,11 +71,17 @@ func runCLI(ctx context.Context, args []string, out io.Writer, newClient func(co
 		if !s.CompletedThrough.IsZero() {
 			boundary = s.CompletedThrough.Format(time.RFC3339Nano)
 		}
-		fmt.Fprintf(out, "subject=%s discovered=%d downloaded=%d already_present=%d failed=%d completed_through=%s", s.Subject, s.Discovered, s.Downloaded, s.AlreadyPresent, s.Failed, boundary)
-		if !s.DeferredTo.IsZero() {
-			fmt.Fprintf(out, " deferred=%s..%s", s.DeferredFrom.Format(time.RFC3339Nano), s.DeferredTo.Format(time.RFC3339Nano))
+		if _, writeErr := fmt.Fprintf(out, "subject=%s discovered=%d downloaded=%d already_present=%d failed=%d completed_through=%s", s.Subject, s.Discovered, s.Downloaded, s.AlreadyPresent, s.Failed, boundary); writeErr != nil {
+			return errors.Join(err, writeErr)
 		}
-		fmt.Fprintln(out)
+		if !s.DeferredTo.IsZero() {
+			if _, writeErr := fmt.Fprintf(out, " deferred=%s..%s", s.DeferredFrom.Format(time.RFC3339Nano), s.DeferredTo.Format(time.RFC3339Nano)); writeErr != nil {
+				return errors.Join(err, writeErr)
+			}
+		}
+		if _, writeErr := fmt.Fprintln(out); writeErr != nil {
+			return errors.Join(err, writeErr)
+		}
 	}
 	if err != nil {
 		if errors.Is(err, context.Canceled) {

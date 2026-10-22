@@ -26,7 +26,11 @@ func storeFor(t *testing.T) *storage.Store {
 	if e != nil {
 		t.Fatal(e)
 	}
-	t.Cleanup(func() { s.Close() })
+	t.Cleanup(func() {
+		if err := s.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 	return s
 }
 

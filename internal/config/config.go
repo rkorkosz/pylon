@@ -2,7 +2,9 @@ package config
 
 import (
 	"errors"
+	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -53,58 +55,35 @@ Credential: set PYLON_KSEF_TOKEN or use --token-file. Never pass a token as an a
 
 func ParseArgs(argv []string) (Options, error) {
 	var o Options
-	seen := map[string]bool{}
-	command := ""
-	for i := 0; i < len(argv); i++ {
-		a := argv[i]
-		if a == "-h" || a == "--help" {
-			o.Help = true
-			continue
-		}
-		if strings.HasPrefix(a, "--") {
-			name, val, has := strings.Cut(a, "=")
-			if seen[name] {
-				return o, fmt.Errorf("duplicate flag: %s", name)
-			}
-			seen[name] = true
-			var dst *string
-			switch name {
-			case "--environment":
-				dst = &o.Environment
-			case "--nip":
-				dst = &o.Nip
-			case "--subject":
-				dst = &o.Subject
-			case "--from":
-				dst = &o.From
-			case "--to":
-				dst = &o.To
-			case "--storage-dir":
-				dst = &o.StorageDir
-			case "--token-file":
-				dst = &o.TokenFile
-			default:
-				return o, fmt.Errorf("unknown flag: %s", name)
-			}
-			if !has {
-				if i+1 >= len(argv) || strings.HasPrefix(argv[i+1], "-") {
-					return o, fmt.Errorf("%s requires a value", name)
-				}
-				i++
-				val = argv[i]
-			}
-			*dst = val
-			continue
-		}
-		if command != "" {
-			return o, fmt.Errorf("unexpected argument: %s", a)
-		}
-		command = a
+	fs := flag.NewFlagSet("pylon", flag.ContinueOnError)
+	fs.SetOutput(io.Discard) // The caller reports errors and prints HelpText.
+	fs.BoolVar(&o.Help, "help", false, "Show help without network access")
+	fs.BoolVar(&o.Help, "h", false, "Show help without network access")
+	fs.StringVar(&o.Environment, "environment", "", "KSeF environment: test, demo, or prod")
+	fs.StringVar(&o.Nip, "nip", "", "Taxpayer NIP")
+	fs.StringVar(&o.Subject, "subject", "", "Invoice direction: received, issued, or both")
+	fs.StringVar(&o.From, "from", "", "Initial start (RFC3339)")
+	fs.StringVar(&o.To, "to", "", "Optional bounded end (RFC3339)")
+	fs.StringVar(&o.StorageDir, "storage-dir", "", "Private data directory")
+	fs.StringVar(&o.TokenFile, "token-file", "", "Read KSeF token from a private file")
+	if err := fs.Parse(argv); err != nil {
+		return o, err
 	}
-	if o.Help {
-		return o, nil
+	args := fs.Args()
+	if len(args) == 0 {
+		if o.Help {
+			return o, nil
+		}
+		return o, errors.New("expected command: sync")
 	}
-	if command != "sync" {
+	command := args[0]
+	if err := fs.Parse(args[1:]); err != nil {
+		return o, err
+	}
+	if fs.NArg() != 0 {
+		return o, fmt.Errorf("unexpected argument: %s", fs.Arg(0))
+	}
+	if !o.Help && command != CommandSync {
 		return o, errors.New("expected command: sync")
 	}
 	return o, nil

@@ -69,7 +69,7 @@ func openDir(parent *os.File, name string, create bool) (*os.File, error) {
 			e = parent.Sync()
 		}
 		if e != nil {
-			f.Close()
+			_ = f.Close() // Preserve the original setup error.
 			return nil, e
 		}
 	}
@@ -99,34 +99,34 @@ func Open(root, environment, nip string) (*Store, error) {
 		if errors.Is(err, syscall.ENOENT) {
 			next, err = openDir(parent, p, true)
 		}
-		parent.Close()
+		_ = parent.Close() // Read-only directory descriptor.
 		if err != nil {
 			return nil, err
 		}
 		parent = next
 		if i == len(parts)-1 {
 			if e = parent.Chmod(0700); e != nil {
-				parent.Close()
+				_ = parent.Close() // Preserve the chmod error.
 				return nil, e
 			}
 		}
 	}
-	defer parent.Close()
+	defer func() { _ = parent.Close() }() // Read-only directory descriptor.
 	env, e := openDir(parent, environment, true)
 	if e != nil {
 		return nil, e
 	}
-	defer env.Close()
+	defer func() { _ = env.Close() }() // Read-only directory descriptor.
 	ns, e := openDir(env, nip, true)
 	if e != nil {
 		return nil, e
 	}
-	defer ns.Close()
+	defer func() { _ = ns.Close() }() // Read-only directory descriptor.
 	s := &Store{Root: root, dir: filepath.Join(root, environment, nip)}
 	ok := false
 	defer func() {
 		if !ok {
-			s.Close()
+			_ = s.Close() // Preserve the original open error.
 		}
 	}()
 	s.lock, e = openRegular(ns, ".lock", syscall.O_CREAT|syscall.O_RDWR, 0600)
@@ -170,7 +170,7 @@ func openRegular(dir *os.File, name string, flags int, mode uint32) (*os.File, e
 		e = errors.New("storage file must be regular and private (chmod 600)")
 	}
 	if e != nil {
-		f.Close()
+		_ = f.Close() // Preserve the validation error.
 		return nil, e
 	}
 	return f, nil
@@ -180,7 +180,7 @@ func readFile(dir *os.File, name string, limit int64) ([]byte, error) {
 	if e != nil {
 		return nil, e
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // Read-only file.
 	b, e := io.ReadAll(io.LimitReader(f, limit+1))
 	if e == nil && int64(len(b)) > limit {
 		e = errors.New("stored file exceeded size limit")
@@ -401,7 +401,7 @@ func atomicWrite(ctx context.Context, dir *os.File, name string, b []byte) error
 	// Refuse existing symlinks and special files, even though rename would replace them.
 	old, e := openRegular(dir, name, syscall.O_RDONLY, 0)
 	if e == nil {
-		old.Close()
+		_ = old.Close() // Read-only validation handle.
 	} else if !errors.Is(e, os.ErrNotExist) {
 		return e
 	}
@@ -410,7 +410,8 @@ func atomicWrite(ctx context.Context, dir *os.File, name string, b []byte) error
 	if e != nil {
 		return e
 	}
-	defer syscall.Unlinkat(int(dir.Fd()), temp)
+	// Best-effort cleanup; a successful rename already removed the temporary name.
+	defer func() { _ = syscall.Unlinkat(int(dir.Fd()), temp) }()
 	for len(b) > 0 && e == nil {
 		if e = ctx.Err(); e != nil {
 			break

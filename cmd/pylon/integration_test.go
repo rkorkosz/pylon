@@ -93,16 +93,16 @@ func TestCLIProcessCrashRestartAndNoop(t *testing.T) {
 		}
 		switch r.URL.Path {
 		case "/auth/challenge":
-			json.NewEncoder(w).Encode(map[string]any{"challenge": "fixture", "timestampMs": 1740000000123})
+			_ = json.NewEncoder(w).Encode(map[string]any{"challenge": "fixture", "timestampMs": 1740000000123})
 		case "/security/public-key-certificates":
-			json.NewEncoder(w).Encode([]any{map[string]any{"certificate": base64.StdEncoding.EncodeToString(der), "publicKeyId": "fixture", "validFrom": now.Add(-time.Hour), "validTo": now.Add(time.Hour), "usage": []string{"KsefTokenEncryption"}}})
+			_ = json.NewEncoder(w).Encode([]any{map[string]any{"certificate": base64.StdEncoding.EncodeToString(der), "publicKeyId": "fixture", "validFrom": now.Add(-time.Hour), "validTo": now.Add(time.Hour), "usage": []string{"KsefTokenEncryption"}}})
 		case "/auth/ksef-token":
-			json.NewEncoder(w).Encode(map[string]any{"referenceNumber": "ref", "authenticationToken": map[string]string{"token": "synthetic-operation-secret"}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"referenceNumber": "ref", "authenticationToken": map[string]string{"token": "synthetic-operation-secret"}})
 		case "/auth/ref":
-			json.NewEncoder(w).Encode(map[string]any{"status": map[string]int{"code": 200}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": map[string]int{"code": 200}})
 		case "/auth/token/redeem":
 			auths.Add(1)
-			json.NewEncoder(w).Encode(map[string]any{"accessToken": map[string]any{"token": "synthetic-access-secret", "validUntil": now.Add(time.Hour)}, "refreshToken": map[string]any{"token": "synthetic-refresh-secret", "validUntil": now.Add(2 * time.Hour)}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"accessToken": map[string]any{"token": "synthetic-access-secret", "validUntil": now.Add(time.Hour)}, "refreshToken": map[string]any{"token": "synthetic-refresh-secret", "validUntil": now.Add(2 * time.Hour)}})
 		case "/invoices/query/metadata":
 			queries.Add(1)
 			offset := r.URL.Query().Get("pageOffset")
@@ -136,12 +136,12 @@ func TestCLIProcessCrashRestartAndNoop(t *testing.T) {
 			if body.SubjectType != "Subject2" || body.DateRange.DateType != "PermanentStorage" || !body.DateRange.Restrict || !body.DateRange.From.Equal(start) || !body.DateRange.To.Equal(end) {
 				t.Errorf("invalid query: %#v", body)
 			}
-			json.NewEncoder(w).Encode(map[string]any{"hasMore": more, "isTruncated": false, "permanentStorageHwmDate": end, "invoices": []any{map[string]any{"ksefNumber": name, "permanentStorageDate": start.Add(time.Hour)}}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"hasMore": more, "isTruncated": false, "permanentStorageHwmDate": end, "invoices": []any{map[string]any{"ksefNumber": name, "permanentStorageDate": start.Add(time.Hour)}}})
 		default:
 			name := strings.TrimPrefix(r.URL.Path, "/invoices/ksef/")
 			if data, ok := documents[name]; ok {
 				w.Header().Set("Content-Type", "application/xml")
-				w.Write(data)
+				_, _ = w.Write(data)
 			} else {
 				http.NotFound(w, r)
 			}
@@ -175,8 +175,8 @@ func TestCLIProcessCrashRestartAndNoop(t *testing.T) {
 	select {
 	case <-secondPage:
 	case <-time.After(10 * time.Second):
-		cmd.Process.Kill()
-		cmd.Wait()
+		_ = cmd.Process.Kill() // Best-effort cleanup before reporting the timeout.
+		_ = cmd.Wait()         // A killed process is expected to fail.
 		t.Fatal("interrupted run did not reach page 2", logs.String())
 	}
 	if e = cmd.Process.Kill(); e != nil {
@@ -195,7 +195,9 @@ func TestCLIProcessCrashRestartAndNoop(t *testing.T) {
 	if ok, e := s.ExistingValid(a); e != nil || !ok {
 		t.Fatal("first document not durable", ok, e)
 	}
-	s.Close()
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
 	interrupt.Store(false)
 	cmd, cancel2 := newCommand(true)
 	defer cancel2()
@@ -215,7 +217,9 @@ func TestCLIProcessCrashRestartAndNoop(t *testing.T) {
 	if e != nil || !ok || !cp.Cursor.Equal(end) {
 		t.Fatal(cp, ok, e)
 	}
-	s.Close()
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
 	before := queries.Load()
 	cmd, cancel3 := newCommand(false)
 	defer cancel3()

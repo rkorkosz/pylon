@@ -7,12 +7,36 @@ import (
 )
 
 func TestParseArgs(t *testing.T) {
-	o, e := ParseArgs([]string{"sync", "--nip=5260250995", "--help"})
-	if e != nil || !o.Help {
-		t.Fatalf("got %#v, %v", o, e)
+	tests := []struct {
+		name    string
+		args    []string
+		want    Options
+		wantErr bool
+	}{
+		{name: "global help", args: []string{"--help"}, want: Options{Help: true}},
+		{name: "short help", args: []string{"-h"}, want: Options{Help: true}},
+		{name: "command help", args: []string{"sync", "--nip=5260250995", "--help"}, want: Options{Help: true, Nip: "5260250995"}},
+		{name: "all options", args: []string{"sync", "--environment", "demo", "--nip=5260250995", "--subject", "both", "--from", "2025-01-01T00:00:00Z", "--to", "2025-02-01T00:00:00Z", "--storage-dir", "private", "--token-file", "token"}, want: Options{Environment: "demo", Nip: "5260250995", Subject: "both", From: "2025-01-01T00:00:00Z", To: "2025-02-01T00:00:00Z", StorageDir: "private", TokenFile: "token"}},
+		{name: "flags before command", args: []string{"--nip", "5260250995", "sync", "--subject", "issued"}, want: Options{Nip: "5260250995", Subject: "issued"}},
+		{name: "single dash", args: []string{"sync", "-nip", "5260250995"}, want: Options{Nip: "5260250995"}},
+		{name: "repeated flag", args: []string{"sync", "--subject", "received", "--subject=issued"}, want: Options{Subject: "issued"}},
+		{name: "unknown flag", args: []string{"sync", "--wat"}, wantErr: true},
+		{name: "missing value", args: []string{"sync", "--nip"}, wantErr: true},
+		{name: "missing command", wantErr: true},
+		{name: "unknown command", args: []string{"other"}, wantErr: true},
+		{name: "extra argument", args: []string{"sync", "extra"}, wantErr: true},
+		{name: "help with invalid flag", args: []string{"sync", "--help", "--wat"}, wantErr: true},
 	}
-	if _, e = ParseArgs([]string{"sync", "--wat"}); e == nil {
-		t.Fatal("unknown flag accepted")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseArgs(tt.args)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ParseArgs() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && got != tt.want {
+				t.Fatalf("ParseArgs() = %#v, want %#v", got, tt.want)
+			}
+		})
 	}
 }
 func TestValidate(t *testing.T) {

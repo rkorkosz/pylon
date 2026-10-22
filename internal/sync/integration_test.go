@@ -41,26 +41,32 @@ func TestAuthenticatedSyncInterruptedRestartAndNoop(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/auth/challenge":
-			json.NewEncoder(w).Encode(map[string]any{"challenge": "c", "timestampMs": int64(1740000000123)})
+			if err := json.NewEncoder(w).Encode(map[string]any{"challenge": "c", "timestampMs": int64(1740000000123)}); err != nil {
+				t.Error(err)
+			}
 		case "/security/public-key-certificates":
-			json.NewEncoder(w).Encode([]any{map[string]any{"certificate": base64.StdEncoding.EncodeToString(der), "publicKeyId": "kid", "validFrom": now.Add(-time.Hour), "validTo": now.Add(time.Hour), "usage": []string{"KsefTokenEncryption"}}})
+			if err := json.NewEncoder(w).Encode([]any{map[string]any{"certificate": base64.StdEncoding.EncodeToString(der), "publicKeyId": "kid", "validFrom": now.Add(-time.Hour), "validTo": now.Add(time.Hour), "usage": []string{"KsefTokenEncryption"}}}); err != nil {
+				t.Error(err)
+			}
 		case "/auth/ksef-token":
 			w.WriteHeader(202)
-			json.NewEncoder(w).Encode(map[string]any{"referenceNumber": "ref", "authenticationToken": map[string]any{"token": "operation", "validUntil": now.Add(time.Hour)}})
+			if err := json.NewEncoder(w).Encode(map[string]any{"referenceNumber": "ref", "authenticationToken": map[string]any{"token": "operation", "validUntil": now.Add(time.Hour)}}); err != nil {
+				t.Error(err)
+			}
 		case "/auth/ref":
-			json.NewEncoder(w).Encode(map[string]any{"status": map[string]any{"code": 200, "description": "ok"}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": map[string]any{"code": 200, "description": "ok"}})
 		case "/auth/token/redeem":
 			authCount.Add(1)
-			json.NewEncoder(w).Encode(map[string]any{"accessToken": map[string]any{"token": "access", "validUntil": now.Add(time.Hour)}, "refreshToken": map[string]any{"token": "refresh", "validUntil": now.Add(time.Hour)}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"accessToken": map[string]any{"token": "access", "validUntil": now.Add(time.Hour)}, "refreshToken": map[string]any{"token": "refresh", "validUntil": now.Add(time.Hour)}})
 		case "/invoices/query/metadata":
 			queryCount.Add(1)
-			json.NewEncoder(w).Encode(map[string]any{"hasMore": false, "isTruncated": false, "permanentStorageHwmDate": end, "invoices": []any{map[string]any{"ksefNumber": "5260250995-20250101-000000000001-00", "permanentStorageDate": start.Add(time.Hour)}, map[string]any{"ksefNumber": "5260250995-20250101-000000000002-00", "permanentStorageDate": start.Add(2 * time.Hour)}}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"hasMore": false, "isTruncated": false, "permanentStorageHwmDate": end, "invoices": []any{map[string]any{"ksefNumber": "5260250995-20250101-000000000001-00", "permanentStorageDate": start.Add(time.Hour)}, map[string]any{"ksefNumber": "5260250995-20250101-000000000002-00", "permanentStorageDate": start.Add(2 * time.Hour)}}})
 		case "/invoices/ksef/5260250995-20250101-000000000001-00":
 			w.Header().Set("Content-Type", "application/xml")
 			_, _ = w.Write([]byte(`<Invoice>A</Invoice>`))
 		case "/invoices/ksef/5260250995-20250101-000000000002-00":
 			if failB.CompareAndSwap(true, false) {
-				http.Error(w, "denied", 403)
+				http.Error(w, "denied", http.StatusForbidden)
 				return
 			}
 			w.Header().Set("Content-Type", "application/xml")
@@ -74,7 +80,11 @@ func TestAuthenticatedSyncInterruptedRestartAndNoop(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	defer store.Close()
+	defer func() {
+		if err := store.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
 	to := end
 	run := func(from *time.Time) ([]syncer.Summary, error) {
 		api := ksef.New(server.URL, "5260250995")

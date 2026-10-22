@@ -78,7 +78,7 @@ func (c *Client) request(ctx context.Context, method, path string, body any, tok
 			return nil, nil, err
 		}
 		b, readErr := io.ReadAll(io.LimitReader(resp.Body, maxResponse+1))
-		resp.Body.Close()
+		_ = resp.Body.Close() // The response has been read; retain any read error.
 		if readErr != nil {
 			return nil, nil, readErr
 		}
