@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rkrokosz/pylon/internal/calendar"
 	"github.com/rkrokosz/pylon/internal/config"
 	"github.com/rkrokosz/pylon/internal/ksef"
 	"github.com/rkrokosz/pylon/internal/storage"
@@ -52,6 +53,14 @@ func runCLI(ctx context.Context, args []string, out io.Writer, newClient func(co
 		return err
 	}
 	defer func() { result = errors.Join(result, store.Close()) }()
+	if o.Command == "export-ics" {
+		b, err := calendar.Export(ctx, store, c.Environment, c.Nip, c.Subject)
+		if err != nil {
+			return err
+		}
+		_, err = out.Write(b)
+		return err
+	}
 	for _, s := range subjects {
 		_, ok, e := store.Checkpoint(s)
 		if e != nil {

@@ -33,6 +33,41 @@ Choose `--subject issued` or `--subject both` as needed. `--to RFC3339` optional
 
 Environments are isolated in `data/<environment>/<NIP>/`: TEST (`api-test.ksef.mf.gov.pl`), DEMO (`api-demo.ksef.mf.gov.pl`), and PROD (`api.ksef.mf.gov.pl`). No environment fallback occurs. Checkpoints use permanent-storage time and only advance after the queried window's invoices are saved. A lagging or missing completeness watermark stops the run as incomplete rather than claiming coverage.
 
+## Export invoice due dates to Google Calendar
+
+Export downloaded invoices offline; no KSeF token or Google credentials are needed:
+
+```sh
+umask 077 # Calendar exports contain invoice identifiers; keep the file private.
+./bin/pylon export-ics --environment prod --nip "$AUTHORIZED_PROD_NIP" \
+  --subject received --storage-dir ./data > invoice-due-dates.ics
+# Import into a dedicated calendar (requires separately configured gcalcli/OAuth):
+gcalcli --calendar 'Invoice payments' import invoice-due-dates.ics
+```
+
+Only import the file if pylon exits successfully. Output is ICS only, with no summary
+mixed into stdout. The usual environment default is TEST; select production explicitly.
+`--subject issued` and `both` are also supported. Export uses the namespace lock,
+checks XML/sidecar integrity, and does not change invoices or sync checkpoints.
+As with sync, opening storage can create missing namespace directories.
+
+An invoice is included only when its FA(2) or FA(3) XML has exactly one
+`Fa/Platnosc/TerminPlatnosci`, containing exactly one valid `Termin` calendar date
+and no `TerminOpis`. Missing, description-only, relative, multiple (even identical),
+and invalid dates are skipped, as are unknown schemas. Dates are never inferred
+from issue dates, free text, or payment periods. This is not full XSD validation.
+The payment fields follow the published [FA(3) schema](https://crd.gov.pl/wzor/2025/06/25/13775/schemat.xsd).
+
+Each included invoice creates one private, transparent all-day event on its due date,
+with the invoice number in the title and KSeF identity in the description. No amounts,
+party names, or bank details are exported. UIDs are stable per environment/NIP/invoice.
+No reminders are embedded. All dates, including past dates, are exported; **paid
+invoices are not filtered**, and corrections are not reconciled with original invoices.
+This is a deadline snapshot, not a payment ledger or synchronization: stable UIDs do
+not guarantee Google/gcalcli will update or deduplicate repeated imports. Use a
+separate calendar and manage previously imported events when replacing the snapshot.
+`--from`, `--to`, and `--token-file` are sync-only and rejected by this command.
+
 ## Safety and recovery
 
 - One writer per environment/NIP namespace; a second process fails. The OS lock is released when its owning process exits. Do not manually remove a live lock.

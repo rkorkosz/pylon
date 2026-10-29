@@ -15,6 +15,7 @@ import (
 const CommandSync = "sync"
 
 type Options struct {
+	Command     string
 	Help        bool
 	Environment string
 	Nip         string
@@ -39,6 +40,10 @@ var nipPattern = regexp.MustCompile(`^[0-9]{10}$`)
 
 const HelpText = `Usage:
   pylon sync --nip <10-digit-NIP> [options]
+  pylon export-ics --nip <10-digit-NIP> [--environment test|demo|prod]
+                   [--subject received|issued|both] [--storage-dir <dir>]
+
+export-ics writes an offline calendar to stdout; no credential is required.
 
 Options:
   --environment test|demo|prod   KSeF environment (default: test; prod is explicit)
@@ -74,17 +79,18 @@ func ParseArgs(argv []string) (Options, error) {
 		if o.Help {
 			return o, nil
 		}
-		return o, errors.New("expected command: sync")
+		return o, errors.New("expected command: sync or export-ics")
 	}
 	command := args[0]
+	o.Command = command
 	if err := fs.Parse(args[1:]); err != nil {
 		return o, err
 	}
 	if fs.NArg() != 0 {
 		return o, fmt.Errorf("unexpected argument: %s", fs.Arg(0))
 	}
-	if !o.Help && command != CommandSync {
-		return o, errors.New("expected command: sync")
+	if !o.Help && command != CommandSync && command != "export-ics" {
+		return o, errors.New("expected command: sync or export-ics")
 	}
 	return o, nil
 }
@@ -156,6 +162,12 @@ func Validate(o Options, envLookup func(string) string) (Config, error) {
 		c.StorageDir = "./data"
 	}
 	c.StorageDir = filepath.Clean(c.StorageDir)
+	if o.Command == "export-ics" {
+		if o.From != "" || o.To != "" || o.TokenFile != "" {
+			return c, errors.New("export-ics does not accept --from, --to, or --token-file")
+		}
+		return c, nil
+	}
 	if envLookup == nil {
 		envLookup = os.Getenv
 	}

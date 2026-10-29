@@ -5,7 +5,7 @@
 /data/
 /bin/
 *.ksef-token
-pylon
+/pylon
 
 # Go build/test output
 *.test
