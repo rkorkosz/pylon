@@ -10,3 +10,4 @@
 # Go build/test output
 *.test
 coverage.out
+invoices.ics
