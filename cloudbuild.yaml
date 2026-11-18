@@ -1,0 +1,32 @@
+# Configure substitutions in the owner-managed TEST trigger. No credential values here.
+options:
+  logging: CLOUD_LOGGING_ONLY
+  automapSubstitutions: true
+substitutions:
+  _ENVIRONMENT: test
+  _REGION: ''
+  _SERVICE: ''
+  _RUNTIME_SA: ''
+  _SOURCE_BUILD_SA: ''
+  _FIRESTORE_DATABASE: '(default)'
+  _NIP: ''
+  _TASK_LIST: ''
+  _KSEF_SECRET: ''
+  _GOOGLE_SECRET: ''
+steps:
+  - name: gcr.io/google.com/cloudsdktool/google-cloud-cli:stable
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        : "$${_REGION:?}" "$${_SERVICE:?}" "$${_RUNTIME_SA:?}" "$${_SOURCE_BUILD_SA:?}"
+        : "$${_FIRESTORE_DATABASE:?}" "$${_NIP:?}" "$${_TASK_LIST:?}" "$${_KSEF_SECRET:?}" "$${_GOOGLE_SECRET:?}"
+        [[ "$${_KSEF_SECRET}" =~ ^[a-zA-Z0-9_-]+:[1-9][0-9]*$$ ]]
+        [[ "$${_GOOGLE_SECRET}" =~ ^[a-zA-Z0-9_-]+:[1-9][0-9]*$$ ]]
+        case "$${_ENVIRONMENT}" in test|prod) ;; *) exit 1 ;; esac
+        gcloud run deploy "$${_SERVICE}" --quiet --project="$$PROJECT_ID" --region="$${_REGION}" \
+          --source=. --function=SyncInvoices --base-image=go127 \
+          --build-service-account="$${_SOURCE_BUILD_SA}" --service-account="$${_RUNTIME_SA}" \
+          --invoker-iam-check --no-allow-unauthenticated --concurrency=1 --min=0 --max-instances=1 --timeout=840s \
+          --set-env-vars="PYLON_DEPLOYMENT=$${_SERVICE},PYLON_ENVIRONMENT=$${_ENVIRONMENT},PYLON_NIP=$${_NIP},PYLON_TASK_LIST=$${_TASK_LIST},PYLON_FIRESTORE_PROJECT=$$PROJECT_ID,PYLON_FIRESTORE_DATABASE=$${_FIRESTORE_DATABASE}" \
+          --set-secrets="/var/secrets/pylon-ksef/token=$${_KSEF_SECRET},/var/secrets/pylon-google/oauth.json=$${_GOOGLE_SECRET}"

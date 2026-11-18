@@ -9,8 +9,12 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/rkrokosz/pylon/internal/invoice"
 	"github.com/rkrokosz/pylon/internal/storage"
 )
+
+const fa2 = "http://crd.gov.pl/wzor/2023/06/29/12648/"
+const fa3 = "http://crd.gov.pl/wzor/2025/06/25/13775/"
 
 func document(ns, terms string) []byte {
 	return []byte(`<Faktura xmlns="` + ns + `"><Fa><P_2>FV/1</P_2><Platnosc>` + terms + `</Platnosc></Fa></Faktura>`)
@@ -37,7 +41,7 @@ func TestDueDate(t *testing.T) {
 				{"foreign namespace", `<TerminPlatnosci xmlns="urn:other"><Termin>2028-02-29</Termin></TerminPlatnosci>`, false},
 			} {
 				t.Run(tc.name, func(t *testing.T) {
-					due, number, ok, err := dueDate(document(ns, tc.terms))
+					due, number, ok, err := invoice.PaymentDate(t.Context(), document(ns, tc.terms))
 					if err != nil || ok != tc.want {
 						t.Fatalf("ok=%v err=%v", ok, err)
 					}
@@ -49,11 +53,11 @@ func TestDueDate(t *testing.T) {
 		})
 	}
 	for _, b := range [][]byte{document("urn:unknown", explicit), []byte(`<Faktura/>`), []byte(`<Faktura xmlns="` + fa3 + `"><Fa/><Fa/></Faktura>`)} {
-		if _, _, ok, err := dueDate(b); ok || err != nil {
+		if _, _, ok, err := invoice.PaymentDate(t.Context(), b); ok || err != nil {
 			t.Fatal(ok, err)
 		}
 	}
-	if _, _, _, err := dueDate([]byte(`<Faktura xmlns="` + fa3 + `">`)); err == nil {
+	if _, _, _, err := invoice.PaymentDate(t.Context(), []byte(`<Faktura xmlns="`+fa3+`">`)); err == nil {
 		t.Fatal("malformed XML accepted")
 	}
 }

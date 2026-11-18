@@ -2,6 +2,8 @@
 
 A local, resumable Go CLI for downloading original KSeF v2 invoice XML and minimal metadata. It does not issue invoices or create credentials. TEST is the default; production requires `--environment prod` explicitly. The TEST OpenAPI contract was checked against v2.9.0 build `2.9.0-te-20261020.1+9a895dfe72629e58773210e624fc22bd934c4d2a`; recheck the selected environment's contract when upgrading.
 
+For weekly payment tasks rather than a local download or calendar export, see the [Cloud Run setup and recovery guide](docs/cloud-run.md).
+
 ## Requirements and credentials
 
 - Go 1.27.2 or the module's supported Go toolchain.

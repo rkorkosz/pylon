@@ -13,12 +13,41 @@ import (
 type Summary struct {
 	Subject                                        string
 	Discovered, Downloaded, AlreadyPresent, Failed int
+	Skipped                                        int
 	CompletedThrough                               time.Time
 	DeferredFrom, DeferredTo                       time.Time
 }
 type Downloader interface {
 	Query(context.Context, string, time.Time, time.Time, int) (ksef.MetadataResponse, error)
 	Download(context.Context, string) ([]byte, error)
+}
+
+// Persistence must durably handle each invoice before SaveCursor succeeds.
+type Persistence interface {
+	Cursor(context.Context, string) (time.Time, bool, error)
+	SaveCursor(context.Context, string, time.Time) error
+	Existing(context.Context, string, storage.Metadata) (bool, error)
+	Save(context.Context, string, []byte, storage.Metadata) (policySkipped bool, err error)
+}
+
+type localStore struct {
+	*storage.Store
+	env, nip string
+}
+
+func (l localStore) Cursor(_ context.Context, subject string) (time.Time, bool, error) {
+	cp, ok, err := l.Checkpoint(subject)
+	return cp.Cursor, ok, err
+}
+func (l localStore) SaveCursor(ctx context.Context, subject string, cursor time.Time) error {
+	return l.SaveCheckpointContext(ctx, storage.Checkpoint{Environment: l.env, NIP: l.nip, Subject: subject, Cursor: cursor})
+}
+func (l localStore) Existing(ctx context.Context, n string, m storage.Metadata) (bool, error) {
+	return l.ExistingValidContext(ctx, n, m)
+}
+func (l localStore) Save(ctx context.Context, n string, b []byte, m storage.Metadata) (bool, error) {
+	_, err := l.SaveXMLContext(ctx, n, b, m)
+	return false, err
 }
 
 func Run(ctx context.Context, api Downloader, store *storage.Store, env, nip string, subjects []string, from, to *time.Time) ([]Summary, error) {
@@ -28,7 +57,7 @@ func Run(ctx context.Context, api Downloader, store *storage.Store, env, nip str
 		end = *to
 	}
 	for _, subject := range subjects {
-		s, e := runSubject(ctx, api, store, env, nip, subject, from, end)
+		s, e := runSubject(ctx, api, localStore{store, env, nip}, subject, from, end, 100*24*time.Hour)
 		out = append(out, s)
 		if e != nil {
 			return out, e
@@ -36,21 +65,27 @@ func Run(ctx context.Context, api Downloader, store *storage.Store, env, nip str
 	}
 	return out, nil
 }
-func runSubject(ctx context.Context, api Downloader, store *storage.Store, env, nip, subject string, from *time.Time, end time.Time) (s Summary, err error) {
+
+// Received uses shorter checkpoint windows for bounded cloud invocations.
+func Received(ctx context.Context, api Downloader, store Persistence, end time.Time) (Summary, error) {
+	return runSubject(ctx, api, store, "received", nil, end, 24*time.Hour)
+}
+
+func runSubject(ctx context.Context, api Downloader, store Persistence, subject string, from *time.Time, end time.Time, window time.Duration) (s Summary, err error) {
 	s.Subject = subject
 	defer func() {
 		if err != nil && s.DeferredTo.IsZero() {
 			s.Failed++
 		}
 	}()
-	cp, exists, err := store.Checkpoint(subject)
+	saved, exists, err := store.Cursor(ctx, subject)
 	if err != nil {
 		return s, err
 	}
 	if exists {
-		s.CompletedThrough = cp.Cursor
+		s.CompletedThrough = saved
 	}
-	start := cp.Cursor
+	start := saved
 	if !exists {
 		if from == nil {
 			return s, fmt.Errorf("first sync for %s requires --from", subject)
@@ -64,7 +99,7 @@ func runSubject(ctx context.Context, api Downloader, store *storage.Store, env, 
 		return s, err
 	}
 	for cursor := start; cursor.Before(end); {
-		requestedEnd := cursor.Add(100 * 24 * time.Hour)
+		requestedEnd := cursor.Add(window)
 		if requestedEnd.After(end) {
 			requestedEnd = end
 		}
@@ -118,7 +153,7 @@ func runSubject(ctx context.Context, api Downloader, store *storage.Store, env, 
 					return s, err
 				}
 				m := storage.Metadata{PermanentStorageDate: inv.PermanentStorageDate, Subject: subject, APIHash: inv.Hash}
-				present, e := store.ExistingValid(inv.KSeFNumber, m)
+				present, e := store.Existing(ctx, inv.KSeFNumber, m)
 				if e != nil {
 					return s, e
 				}
@@ -130,8 +165,12 @@ func runSubject(ctx context.Context, api Downloader, store *storage.Store, env, 
 				if e != nil {
 					return s, fmt.Errorf("download invoice %s: %w", inv.KSeFNumber, e)
 				}
-				if _, e = store.SaveXMLContext(ctx, inv.KSeFNumber, b, m); e != nil {
+				skipped, e := store.Save(ctx, inv.KSeFNumber, b, m)
+				if e != nil {
 					return s, fmt.Errorf("store invoice %s: %w", inv.KSeFNumber, e)
+				}
+				if skipped {
+					s.Skipped++
 				}
 				s.Downloaded++
 			}
@@ -155,14 +194,14 @@ func runSubject(ctx context.Context, api Downloader, store *storage.Store, env, 
 		if err = ctx.Err(); err != nil {
 			return s, err
 		}
-		if !exists || effectiveEnd.After(cp.Cursor) {
-			if e := store.SaveCheckpoint(storage.Checkpoint{Environment: env, NIP: nip, Subject: subject, Cursor: effectiveEnd}); e != nil {
+		if !exists || effectiveEnd.After(saved) {
+			if e := store.SaveCursor(ctx, subject, effectiveEnd); e != nil {
 				return s, e
 			}
-			cp.Cursor = effectiveEnd
+			saved = effectiveEnd
 			exists = true
 		}
-		s.CompletedThrough = cp.Cursor
+		s.CompletedThrough = saved
 		cursor = effectiveEnd
 		if effectiveEnd.Before(requestedEnd) {
 			s.DeferredFrom = effectiveEnd

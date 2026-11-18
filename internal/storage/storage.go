@@ -187,9 +187,16 @@ func readFile(dir *os.File, name string, limit int64) ([]byte, error) {
 	}
 	return b, e
 }
-func invoiceNames(n string) (string, string, error) {
+func ValidateNumber(n string) error {
 	if !numberPattern.MatchString(n) {
-		return "", "", errors.New("invalid KSeF number")
+		return errors.New("invalid KSeF number")
+	}
+	return nil
+}
+
+func invoiceNames(n string) (string, string, error) {
+	if err := ValidateNumber(n); err != nil {
+		return "", "", err
 	}
 	return n + ".xml", n + ".json", nil
 }
@@ -207,15 +214,12 @@ func (s *Store) SaveXMLContext(ctx context.Context, n string, b []byte, m Metada
 	if e != nil {
 		return false, e
 	}
-	if e = validateXML(ctx, b); e != nil {
+	sum, e := ValidateDocument(ctx, b, m.APIHash)
+	if e != nil {
 		return false, e
 	}
 	if m.PermanentStorageDate.IsZero() || !validSubject(m.Subject) {
 		return false, errors.New("invoice metadata omitted storage date or subject")
-	}
-	sum := sha256.Sum256(b)
-	if m.APIHash != "" && m.APIHash != base64.StdEncoding.EncodeToString(sum[:]) {
-		return false, errors.New("invoice XML does not match KSeF invoice hash")
 	}
 	existing, e := readFile(s.invoices, xp, maxXML)
 	xmlExists := e == nil
@@ -259,6 +263,19 @@ func (s *Store) SaveXMLContext(ctx context.Context, n string, b []byte, m Metada
 	}
 	return !xmlExists || !metaExists, nil
 }
+
+// ValidateDocument checks the XML envelope and the upstream hash when supplied.
+func ValidateDocument(ctx context.Context, b []byte, apiHash string) ([32]byte, error) {
+	if err := validateXML(ctx, b); err != nil {
+		return [32]byte{}, err
+	}
+	sum := sha256.Sum256(b)
+	if apiHash != "" && apiHash != base64.StdEncoding.EncodeToString(sum[:]) {
+		return [32]byte{}, errors.New("invoice XML does not match KSeF invoice hash")
+	}
+	return sum, nil
+}
+
 func validateXML(ctx context.Context, b []byte) error {
 	if len(b) == 0 || len(b) > maxXML {
 		return errors.New("empty or oversized invoice body")
@@ -352,6 +369,9 @@ func mergeMetadata(old, in Metadata) (Metadata, error) {
 	return old, nil
 }
 func (s *Store) ExistingValid(n string, expected ...Metadata) (bool, error) {
+	return s.ExistingValidContext(context.Background(), n, expected...)
+}
+func (s *Store) ExistingValidContext(ctx context.Context, n string, expected ...Metadata) (bool, error) {
 	xp, mp, e := invoiceNames(n)
 	if e != nil {
 		return false, e
@@ -368,7 +388,7 @@ func (s *Store) ExistingValid(n string, expected ...Metadata) (bool, error) {
 	if e != nil {
 		return false, e
 	}
-	if e = validateXML(context.Background(), b); e != nil {
+	if e = validateXML(ctx, b); e != nil {
 		return false, e
 	}
 	m, exists, e := s.metadata(n, b)
@@ -383,7 +403,7 @@ func (s *Store) ExistingValid(n string, expected ...Metadata) (bool, error) {
 		}
 		after, _ := json.Marshal(m)
 		if !bytes.Equal(before, after) {
-			if e = writeJSON(context.Background(), s.invoices, mp, m); e != nil {
+			if e = writeJSON(ctx, s.invoices, mp, m); e != nil {
 				return false, e
 			}
 		}
@@ -463,10 +483,13 @@ func (s *Store) validateCheckpoint(c Checkpoint, subject string) error {
 	return nil
 }
 func (s *Store) SaveCheckpoint(c Checkpoint) error {
+	return s.SaveCheckpointContext(context.Background(), c)
+}
+func (s *Store) SaveCheckpointContext(ctx context.Context, c Checkpoint) error {
 	c.Version = CheckpointVersion
 	c.FilterVersion = 1
 	if e := s.validateCheckpoint(c, c.Subject); e != nil {
 		return e
 	}
-	return writeJSON(context.Background(), s.checkpoints, c.Subject+".json", c)
+	return writeJSON(ctx, s.checkpoints, c.Subject+".json", c)
 }

@@ -38,6 +38,8 @@ func (c *Client) SetHTTPClient(h *http.Client) {
 	}
 }
 
+var ErrAuthorization = errors.New("KSeF credential rejected or access denied")
+
 type apiError struct {
 	Status  int
 	Message string
@@ -46,6 +48,10 @@ type apiError struct {
 func (e *apiError) Error() string {
 	return fmt.Sprintf("KSeF API returned HTTP %d: %s", e.Status, e.Message)
 }
+func (e *apiError) Is(target error) bool {
+	return target == ErrAuthorization && (e.Status == http.StatusUnauthorized || e.Status == http.StatusForbidden)
+}
+
 func (c *Client) request(ctx context.Context, method, path string, body any, token string, retries int) ([]byte, http.Header, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
@@ -278,7 +284,7 @@ func (c *Client) Authenticate(ctx context.Context, plain string) error {
 			break
 		}
 		if s.Status.Code != 100 {
-			return fmt.Errorf("KSeF authentication failed (status %d)", s.Status.Code)
+			return fmt.Errorf("%w (authentication status %d)", ErrAuthorization, s.Status.Code)
 		}
 		if e = c.wait(ctx, 750*time.Millisecond); e != nil {
 			return e

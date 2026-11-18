@@ -107,12 +107,9 @@ func validNIP(s string) bool {
 	return sum%11 != 10 && sum%11 == int(s[9]-'0')
 }
 
-func Validate(o Options, envLookup func(string) string) (Config, error) {
-	var c Config
-	c.Environment = o.Environment
-	if c.Environment == "" {
-		c.Environment = "test"
-	}
+// ValidateScope selects an explicit KSeF environment and validates its taxpayer.
+func ValidateScope(environment, nip string) (Config, error) {
+	c := Config{Environment: environment}
 	switch c.Environment {
 	case "test":
 		c.BaseURL = "https://api-test.ksef.mf.gov.pl/v2"
@@ -123,10 +120,21 @@ func Validate(o Options, envLookup func(string) string) (Config, error) {
 	default:
 		return c, fmt.Errorf("invalid environment %q (expected test, demo, or prod)", c.Environment)
 	}
-	if !validNIP(o.Nip) {
+	if !validNIP(nip) {
 		return c, errors.New("NIP must be a valid 10-digit Polish NIP")
 	}
-	c.Nip = o.Nip
+	c.Nip = nip
+	return c, nil
+}
+
+func Validate(o Options, envLookup func(string) string) (Config, error) {
+	if o.Environment == "" {
+		o.Environment = "test"
+	}
+	c, err := ValidateScope(o.Environment, o.Nip)
+	if err != nil {
+		return c, err
+	}
 	c.Subject = o.Subject
 	if c.Subject == "" {
 		c.Subject = "received"
@@ -145,7 +153,6 @@ func Validate(o Options, envLookup func(string) string) (Config, error) {
 		u := t.UTC()
 		return &u, nil
 	}
-	var err error
 	c.From, err = parse(o.From)
 	if err != nil {
 		return c, err
